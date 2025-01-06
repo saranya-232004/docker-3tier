@@ -106,6 +106,4 @@ pipeline {
             echo 'Deployment failed'
         }
     }
-}
-
-
+}}
