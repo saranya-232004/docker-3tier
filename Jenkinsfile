@@ -2,41 +2,48 @@ pipeline {
     agent any
 
     environment {
-        FRONTEND_DIR = 'frontend'
-        BACKEND_DIR = 'backend'
-        MONGO_CONTAINER_NAME = 'mongo-db'
+        BACKEND_IMAGE = 'backend-image:latest'
+        FRONTEND_IMAGE = 'frontend-image:latest'
+        MONGO_URI = 'mongodb://mongo:27017/mydb'
+        MONGO_CONTAINER = 'mongo:latest'
+        BACKEND_PORT = '3001'
+        FRONTEND_PORT = '3000'
+        MONGO_PORT = '27017'
     }
 
     stages {
         stage('Checkout') {
             steps {
                 script {
-                    // Checkout the code from the branch
+                    // Checkout code based on branch
                     checkout scm
                 }
             }
         }
 
-        stage('Build Frontend') {
+        stage('Backend Build & Test') {
             steps {
-                dir("${env.FRONTEND_DIR}") {
-                    script {
-                        // Build frontend code
-                        sh 'npm install'
-                        sh 'npm run build'
-                    }
+                script {
+                    // Backend build (assumes Node.js backend for example)
+                    echo "Building Backend"
+                    sh 'cd backend && npm install && npm test'
+
+                    // You can modify this for Java, Python, etc.
+                    // sh 'cd backend && mvn clean install'
+                    // sh 'cd backend && pytest'
                 }
             }
         }
 
-        stage('Build Backend') {
+        stage('Frontend Build & Test') {
             steps {
-                dir("${env.BACKEND_DIR}") {
-                    script {
-                        // Build backend code
-                        sh 'npm install'
-                        sh 'npm run build'
-                    }
+                script {
+                    // Frontend build (assuming a React app as an example)
+                    echo "Building Frontend"
+                    sh 'cd frontend && npm install && npm run build'
+
+                    // If using another framework like Angular, Vue.js, or others, change accordingly.
+                    // sh 'cd frontend && ng build --prod'
                 }
             }
         }
@@ -44,66 +51,69 @@ pipeline {
         stage('Deploy MongoDB') {
             steps {
                 script {
-                     // Deploy MongoDB using Docker
-                    sh 'docker pull mongo:latest'
-                    sh 'docker run -d --name ${env.MONGO_CONTAINER_NAME} -p 27017:27017 mongo'
+                    // Deploy MongoDB container (can be customized as needed)
+                    echo "Deploying MongoDB"
+                    sh """
+                        docker pull ${MONGO_CONTAINER}
+                        docker run --name mongo -d -p ${MONGO_PORT}:${MONGO_PORT} ${MONGO_CONTAINER}
+                    """
+                    // You can customize this step based on your preferred MongoDB setup.
+                    // This step assumes MongoDB is deployed via Docker.
                 }
             }
         }
 
         stage('Deploy Backend') {
             steps {
-                dir("${env.BACKEND_DIR}") {
-                    script {
-                        // Build and run backend in Docker
-                        sh 'docker build -t sarandocker23/backend-image .'
-                        sh 'docker run -d --name backend-app --link ${env.MONGO_CONTAINER_NAME}:mongo -p 3001:3001 sarandocker23/backend-image'
-                    }
+                script {
+                    echo "Deploying Backend"
+                    sh """
+                        docker build -t ${BACKEND_IMAGE} ./backend
+                        docker run -d -p ${BACKEND_PORT}:${BACKEND_PORT} --link mongo:${MONGO_URI} ${BACKEND_IMAGE}
+                    """
+                    // Assuming Dockerized backend, replace with appropriate deploy step.
+                    // You could also deploy to Kubernetes or another service.
                 }
             }
         }
 
         stage('Deploy Frontend') {
             steps {
-                dir("${env.FRONTEND_DIR}") {
-                    script {
-                        // Build and run frontend in Docker
-                        sh 'docker build -t sarandocker23/frontend-image .'
-                        sh 'docker run -d --name frontend-app -p 3000:3000 sarandocker23/frontend-image'
-                    }
-                }
-            }
-
-
-        stage('Test') {
-            steps {
                 script {
-                    // Run tests (adjust as needed)
-                    sh 'npm test'  // Assuming unit tests or integration tests
+                    echo "Deploying Frontend"
+                    sh """
+                        docker build -t ${FRONTEND_IMAGE} ./frontend
+                        docker run -d -p ${FRONTEND_PORT}:${FRONTEND_PORT} ${FRONTEND_IMAGE}
+                    """
+                    // For frontend, if you're using Nginx, Dockerize it.
+                    // You may need to configure it for production (e.g., CDN, etc.).
                 }
             }
         }
 
-        stage('Cleanup') {
+        stage('Post Deployment Tests') {
             steps {
                 script {
-                    // Optionally clean up containers after deployment
-                    sh 'docker stop frontend-app backend-app ${env.MONGO_CONTAINER_NAME}'
-                    sh 'docker rm frontend-app backend-app ${env.MONGO_CONTAINER_NAME}'
+                    // Run post-deployment tests (optional)
+                    echo "Running Post Deployment Tests"
+                    // Example: curl the backend and frontend to ensure they are working
+                    sh 'curl -f http://localhost:${BACKEND_PORT}/api/healthcheck'
+                    sh 'curl -f http://localhost:${FRONTEND_PORT}'
                 }
             }
         }
     }
 
     post {
-        always {
-            echo 'Pipeline finished'
-        }
         success {
-            echo 'Deployment successful'
+            echo 'Pipeline successful, application deployed successfully.'
         }
         failure {
-            echo 'Deployment failed'
+            echo 'Pipeline failed, there were errors during deployment.'
+        }
+        always {
+            cleanWs()
         }
     }
-}}
+}
+
